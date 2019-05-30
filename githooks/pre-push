@@ -1,0 +1,46 @@
+#!/bin/sh
+#
+# pre-push hook
+#
+# Rejects a push to develop and master if it contains merge commits
+#
+# This kind of merge commits are created when the user is pulling 
+# the remote repository with merge default option. To update a git local repository,
+# we have to use 'pull --rebase' or 'pull --preserve'
+# 
+# The script checks if the rev list contains an element with more than 2 parents
+# @link https://git-scm.com/docs/git-rev-list#Documentation/git-rev-list.txt---merges
+
+# List of branches that disallow merges
+restrictedBranches=(refs/heads/develop refs/heads/master)
+
+while read local_ref local_sha remote_ref remote_sha
+do
+    # Check if the target remote is in the list of restricted branches
+    if [[ " ${restrictedBranches[*]} " == *" $remote_ref "* ]]; then
+        # fetch the list of local merge commits
+        localMergeCommits=$(git rev-list --merges $local_sha)
+        # fetch the list of remote merge commits
+        remoteMergeCommits=$(git rev-list --merges $remote_sha)
+
+        # detect only local, new, merge commits that are not pushed yet
+        unpushedMergeCommits=`echo "$localMergeCommits\n$remoteMergeCommits" | sort | uniq -u`
+
+        # if there are unpushed merge commits, reject the push
+        if [[ ! -z "$unpushedMergeCommits" ]]; then
+            echo "\033[0;37m\033[41m"
+            echo "Merge commit(s) detected:"
+            echo "$unpushedMergeCommits" |  awk '{print "  - "$0}'
+            echo "Merge commits into the following branches are forbidden:"
+            echo "${restrictedBranches[*]}" | tr ' ' '\n' | awk '{print "  - "$0}'
+            echo
+            echo "Please merge your changes using squash merge or rebasing."
+            echo "For further information see:"
+            echo "    https://git-scm.com/docs/git-merge#Documentation/git-merge.txt---squash \033[0m"
+            echo
+            exit 1
+        fi
+    fi
+done
+
+exit 0
